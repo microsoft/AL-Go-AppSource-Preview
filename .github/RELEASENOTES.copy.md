@@ -4,6 +4,59 @@ Note that when using the preview version of AL-Go for GitHub, we recommend you U
 
 ### Issues
 
+- Issue 1241 Increment Version Number might produce wrong app.json
+- `deployTo<environment>` now has an additional property called DependencyInstallMode, which determines how dependencies are deployed if GenerateDependencyArtifact is true. Default value is `install` to install dependencies if not already installed. Other values are `ignore` for ignoring dependencies, `upgrade` for upgrading dependencies if possible and `forceUpgrade` for force upgrading dependencies.
+
+### New Project Settings
+
+- `pageScriptingTests` should be an array of page scripting test file specifications, relative to the AL-Go project. Examples of file specifications: `recordings/my*.yml` (for all yaml files in the recordings subfolder matching my\*.yml), `recordings` (for all \*.yml files in the recordings subfolder) or `recordings/test.yml` (for a single yml file)
+- `doNotRunPageScriptingTests` can force the pipeline to NOT run the page scripting tests specified in pageScriptingTests. Note this setting can be set in a [workflow specific settings file](#where-are-the-settings-located) to only apply to that workflow
+- `restoreDatabases` should be an array of events, indicating when you want to start with clean databases in the container. Possible events are: `BeforeBcpTests`, `BeforePageScriptingTests`, `BeforeEachTestApp`, `BeforeEachBcptTestApp`, `BeforeEachPageScriptingTest`
+
+### New Repository Settings
+
+- `trustedSigning` is a structure defining `Account`, `EndPoint` and `CertificateProfile` if you want to use trusted signing. Note that your Azure_Credentials secret (Microsoft Entra ID App or Managed identity) still needs to provide access to your azure subscription and be assigned the `Trusted Signing Certificate Profile Signer` role in the Trusted Signing Account.
+
+### Support for Azure Trusted Signing
+
+Read https://learn.microsoft.com/en-us/azure/trusted-signing/ for more information about Trusted Signing and how to set it up. After setting up your trusted signing account and certificate profile, you need to create a setting called [trustedSigning](https://aka.ms/algosettings#trustedSigning) for AL-Go to sign your apps using Azure Trusted Signing.
+
+### Support for Page Scripting Tests
+
+Page Scripting tests are now supported as part of CI/CD. By specifying pageScriptingTests in your project settings file, AL-Go for GitHub will automatically run these page scripting tests as part of your CI/CD workflow, generating the following build artifacts:
+
+- `PageScriptingTestResults` is a JUnit test results file with all results combined.
+- `PageScriptingTestResultDetails` are the detailed test results (including videos) when any of the page scripting tests have failures. If the page scripting tests succeed - the details are not published.
+
+## v6.0
+
+### Issues
+
+- Issue 1184 Publish to Environment fails on 'Permission Denied'
+- AL Language extension in 25.0 doesn't contain the linux executable, use dotnet to invoke the dll instead.
+
+### New Settings
+
+- `deliverTo<deliverytarget>` now has an additional property called `ContinuousDelivery`, indicating whether or not to run continuous delivery to this deliveryTarget. Default is true.
+- `trustMicrosoftNuGetFeeds` Unless this setting is set to false, AL-Go for GitHub will trust the NuGet feeds provided by Microsoft. The feeds provided by Microsoft contains all Microsoft apps, all Microsoft symbols and symbols for all AppSource apps.
+- `trustedNuGetFeeds` - can be an array of NuGet feed specifications, which AL-Go for GitHub will use for dependency resolution. Every feed specification must include a URL property and can optionally include a few other properties:
+  - url - The URL of the feed (examples: https://pkgs.dev.azure.com/myorg/apps/\_packaging/myrepo/nuget/v3/index.json or https://nuget.pkg.github.com/mygithuborg/index.json").
+  - patterns - AL-Go for GitHub will only trust packages, where the ID matches this pattern. Default is all packages (\*).
+  - fingerprints - If specified, AL-Go for GitHub will only trust packages signed with a certificate with a fingerprint matching one of the fingerprints in this array.
+  - authTokenSecret - If the NuGet feed specified by URL is private, the authTokenSecret must be the name of a secret containing the authentication token with permissions to search and read packages from the NuGet feed.
+
+### Support for delivering to GitHub Packages and NuGet
+
+With this release the implementation for delivering to NuGet packages (by adding the NuGetContext secret), is similar to the functionality behind delivering to GitHub packages and the implementation is no longer in preview.
+
+### Allow GitHubRunner and GitHubRunnerShell as project settings
+
+Previously, AL-Go required the GitHubRunner and GitHubRunnerShell settings to be set on repository level. This has now been changed such that they can be set on project level.
+
+## v5.3
+
+### Issues
+
 - Issue 1105 Increment Version Number - repoVersion in .github/AL-Go-Settings.json is not updated
 - Issue 1073 Publish to AppSource - Automated validation: failure
 - Issue 980 Allow Scope to be PTE in continuousDeployment for PTE extensions in Sandbox (enhancement request)
@@ -13,6 +66,8 @@ Note that when using the preview version of AL-Go for GitHub, we recommend you U
 - Issue 1109 Why filter deployment settings?
 - Fix issue with github ref when running reusable workflows
 - Issue 1098 Support for specifying the name of the AZURE_CREDENTIALS secret by adding a AZURE_CREDENTIALSSecretName setting
+- Fix placeholder syntax for git ref in PullRequestHandler.yaml
+- Issue 1164 Getting secrets from Azure key vault fails in Preview
 
 ### Dependencies to PowerShell modules
 
@@ -26,11 +81,21 @@ All authentication context secrets now supports managed identities and federated
 
 In the summary after a Test Run, you now also have the result of performance tests.
 
+### Support Ubuntu runners for all AL-Go workflows
+
+Previously, the workflows "Update AL-Go System Files" and "TroubleShooting" were hardcoded to always run on `windows-latest` to prevent deadlocks and security issues.
+From now on, `ubuntu-lates` will also be allowed for these mission critical workflows, when changing the `runs-on` setting. Additionally, only the value `pwsh` for `shell` setting is allowed when using `ubuntu-latest` runners.
+
+### Updated AL-Go telemetry
+
+AL-Go for GitHub now includes a new telemetry module. For detailed information on how to enable or disable telemetry and to see what data AL-Go logs, check out [this article](https://github.com/microsoft/AL-Go/blob/main/Scenarios/EnablingTelemetry.md).
+
 ### New Settings
 
 - `deployTo<environmentName>`: is not really new, but has a new property:
 
   - **Scope** = specifies the scope of the deployment: Dev, PTE. If not specified, AL-Go for GitHub will always use the Dev Scope for AppSource Apps, but also for PTEs when deploying to sandbox environments when impersonation (refreshtoken) is used for authentication.
+  - **BuildMode** = specifies which buildMode to use for the deployment. Default is to use the Default buildMode.
   - **\<custom>** = custom properties are now supported and will be transferred to a custom deployment script in the hashtable.
 
 - `bcptThresholds` is a JSON object with properties for the default thresholds for the Business Central Performance Toolkit
@@ -613,7 +678,7 @@ Setting the repo setting "runs-on" to "Ubuntu-Latest", followed by running Updat
 ### CI/CD and Publish To New Environment
 
 - Base functionality for selecting a specific GitHub runner for an environment
-- Include dependencies artifacts when deploying (if generateDependencyArtifacts is true)
+- Include dependencies artifacts when deploying (if generateDependencyArtifact is true)
 
 ### localDevEnv.ps1 and cloudDevEnv.ps1
 
